@@ -12,7 +12,7 @@ header{padding:14px 18px;background:#1e293b;font-size:18px;font-weight:bold}
 .wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
 @media(max-width:850px){.wrap{grid-template-columns:1fr}}
 #map{height:420px;border-radius:12px;border:1px solid #334155;background:#1e293b}
-.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;overflow-x:auto}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 label{font-size:13px;display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
 input,button{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#e2e8f0}
@@ -20,6 +20,9 @@ button{cursor:pointer;background:#2563eb;border-color:#2563eb}
 button.g{background:#334155;border-color:#475569}
 table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
 th,td{padding:7px 6px;border-bottom:1px solid #334155;text-align:center}
+td:not(:first-child){direction:ltr;unicode-bidi:isolate}
+input[type=number],input[type=date]{direction:ltr;text-align:left}
+bdi{unicode-bidi:isolate;direction:ltr}
 th{color:#94a3b8;font-weight:normal}
 td:first-child,th:first-child{text-align:right}
 h3{margin:4px 0 6px;font-size:15px}
@@ -58,7 +61,7 @@ canvas{width:100%;height:240px;background:#0f172a;border-radius:8px}
     <table id="sunT"></table>
     <h3 class="moon" style="margin-top:14px">🌙 ماه</h3>
     <table id="moonT"></table>
-    <div class="note">آزیموت از شمال و در جهت عقربه‌های ساعت (۰°=شمال، ۹۰°=شرق، ۱۸۰°=جنوب، ۲۷۰°=غرب). ارتفاع زاویه‌ای بالای افق است. «ظهر» = لحظهٔ اوج (بیشینهٔ ارتفاع). طلوع/غروب خورشید با احتساب شکست جوی و شعاع قرص (−۰٫۸۳۳°).</div>
+    <div class="note">آزیموت از شمال و در جهت عقربه‌های ساعت (0°=شمال، 90°=شرق، 180°=جنوب، 270°=غرب). ارتفاع زاویه‌ای بالای افق است. «ظهر» = لحظهٔ اوج (بیشینهٔ ارتفاع). طلوع/غروب خورشید با احتساب شکست جوی و شعاع قرص (-0.833°).</div>
   </div>
   <div class="card">
     <h3>نمودار ارتفاع در طول روز</h3>
@@ -112,12 +115,12 @@ function events(b,t0,lat,lon){
   return{rises,sets,transits,A};
 }
 
-const fa=s=>String(s).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]).replace('.','٫');
+const fa=s=>String(s);
 const $=id=>document.getElementById(id);
 let TZ=3.5;
-function fmtT(ms){const d=new Date(ms+TZ*36e5);
-  return fa(String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'));}
-const fmtA=x=>fa(x.toFixed(1))+'°';
+function fmtT(ms){const d=new Date(Math.round(ms/1000)*1000+TZ*36e5);
+  const p=n=>String(n).padStart(2,'0');return p(d.getUTCHours())+':'+p(d.getUTCMinutes())+':'+p(d.getUTCSeconds());}
+const fmtA=x=>'<bdi dir="ltr">'+x.toFixed(2)+'°</bdi>';
 
 function dirName(az){return['شمال','شمال‌شرق','شرق','جنوب‌شرق','جنوب','جنوب‌غرب','غرب','شمال‌غرب'][Math.round(az/45)%8];}
 
@@ -125,8 +128,7 @@ function fill(tableId,name,b,t0,lat,lon){
   const ev=events(b,t0,lat,lon);
   let h='<tr><th>رویداد</th><th>ساعت</th><th>آزیموت</th><th>ارتفاع</th></tr>';
   const row=(lbl,t)=>{const p=b.fn(t,lat,lon);
-    const alt=lbl.startsWith('ظهر')||lbl.startsWith('اوج')?fmtA(p.alt):fmtA(Math.max(p.alt,b.h0)>=b.h0?p.alt:p.alt);
-    return `<tr><td>${lbl}</td><td>${fmtT(t)}</td><td>${fmtA(p.az)} (${dirName(p.az)})</td><td>${alt}</td></tr>`;};
+    return `<tr><td>${lbl}</td><td>${fmtT(t)}</td><td>${fmtA(p.az)} (${dirName(p.az)})</td><td>${fmtA(p.alt)}</td></tr>`;};
   ev.rises.forEach(t=>h+=row('طلوع '+name,t));
   ev.transits.forEach(t=>h+=row((name==='خورشید'?'ظهر خورشیدی (اوج)':'اوج ماه'),t));
   ev.sets.forEach(t=>h+=row('غروب '+name,t));
@@ -134,7 +136,7 @@ function fill(tableId,name,b,t0,lat,lon){
     const up=ev.A[0]>b.h0;
     h+=`<tr><td colspan="4">${up?'در این روز '+name+' غروب نمی‌کند (روز قطبی / بالای افق)':'در این روز '+name+' طلوع نمی‌کند'}</td></tr>`;
   } else if(!ev.rises.length||!ev.sets.length||!ev.transits.length){
-    h+=`<tr><td colspan="4" style="color:#94a3b8">برخی رویدادها در این بازهٔ ۲۴ ساعته رخ نمی‌دهند.</td></tr>`;
+    h+=`<tr><td colspan="4" style="color:#94a3b8">برخی رویدادها در این بازهٔ 24 ساعته رخ نمی‌دهند.</td></tr>`;
   }
   $(tableId).innerHTML=h;
   return ev;
@@ -142,13 +144,13 @@ function fill(tableId,name,b,t0,lat,lon){
 
 function draw(t0,lat,lon){
   const cv=$('cv'),c=cv.getContext('2d'),W=cv.width,H=cv.height,pad=36;
-  c.clearRect(0,0,W,H);
+  c.clearRect(0,0,W,H);c.direction='ltr';
   const step=10*60000,n=144,S=[],M=[];
   for(let i=0;i<=n;i++){S.push(sunPos(t0+i*step,lat,lon).alt);M.push(moonPos(t0+i*step,lat,lon).alt);}
   const mn=-90,mx=90,X=i=>pad+(W-pad-10)*i/n,Y=v=>10+(H-pad-10)*(mx-v)/(mx-mn);
   c.strokeStyle='#334155';c.fillStyle='#94a3b8';c.font='13px sans-serif';c.textAlign='center';c.lineWidth=1;
   for(let h=0;h<=24;h+=3){const x=X(h*6);c.beginPath();c.moveTo(x,10);c.lineTo(x,H-pad);c.stroke();
-    c.fillText(fa(String(((h*60+TZ*0)/60|0)%24).padStart(2,'0')),x,H-pad+16);}
+    c.fillText(fa(String(h%24).padStart(2,'0')),x,H-pad+16);}
   c.textAlign='right';
   [-90,-45,0,45,90].forEach(v=>{c.beginPath();c.moveTo(pad,Y(v));c.lineTo(W-10,Y(v));c.stroke();c.fillText(fa(v)+'°',pad-4,Y(v)+4);});
   c.setLineDash([6,4]);c.strokeStyle='#e2e8f0';c.beginPath();c.moveTo(pad,Y(0));c.lineTo(W-10,Y(0));c.stroke();c.setLineDash([]);
@@ -198,7 +200,6 @@ if(window.L){
   };
   bases['OpenStreetMap'].addTo(map);
   L.control.layers(bases,null,{collapsed:false,position:'topright'}).addTo(map);
-  // شبکهٔ مختصات که بدون اینترنت هم دیده می‌شود
   for(let la=-80;la<=80;la+=20)L.polyline([[la,-180],[la,180]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
   for(let lo=-180;lo<=180;lo+=20)L.polyline([[-90,lo],[90,lo]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
   L.polyline([[0,-180],[0,180]],{color:'#f59e0b',weight:1.5,opacity:.7,interactive:false}).addTo(map);
