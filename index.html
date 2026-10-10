@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>طلوع، ظهر و غروب خورشید و ماه</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Tahoma,Vazirmatn,sans-serif;background:#0f172a;color:#e2e8f0}
+header{padding:14px 18px;background:#1e293b;font-size:18px;font-weight:bold}
+.wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px}
+@media(max-width:850px){.wrap{grid-template-columns:1fr}}
+#map{height:420px;border-radius:12px;border:1px solid #334155;background:#1e293b}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+label{font-size:13px;display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
+input,button{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#e2e8f0}
+button{cursor:pointer;background:#2563eb;border-color:#2563eb}
+button.g{background:#334155;border-color:#475569}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+th,td{padding:7px 6px;border-bottom:1px solid #334155;text-align:center}
+th{color:#94a3b8;font-weight:normal}
+td:first-child,th:first-child{text-align:right}
+h3{margin:4px 0 6px;font-size:15px}
+.sun{color:#fbbf24}.moon{color:#cbd5e1}
+canvas{width:100%;height:240px;background:#0f172a;border-radius:8px}
+.note{font-size:12px;color:#94a3b8;line-height:1.8;margin-top:8px}
+.now{font-size:14px;line-height:2}
+</style>
+</head>
+<body>
+<header>☀️🌙 طلوع، ظهر و غروب خورشید و ماه + زاویه‌ها (از روی نقشه)</header>
+<div class="wrap">
+  <div>
+    <div id="map"></div>
+    <div class="note">روی نقشه کلیک کنید تا مکان انتخاب شود. (برای نمایش نقشه به اینترنت نیاز است؛ بدون اینترنت می‌توانید مختصات را دستی وارد کنید.)</div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <label>عرض جغرافیایی<input id="lat" type="number" step="0.0001" value="35.6892"></label>
+      <label>طول جغرافیایی<input id="lon" type="number" step="0.0001" value="51.3890"></label>
+    </div>
+    <div class="row">
+      <label>تاریخ (میلادی)<input id="date" type="date"></label>
+      <label>اختلاف ساعت از UTC<input id="tz" type="number" step="0.5" value="3.5"></label>
+    </div>
+    <div class="row">
+      <button id="go">محاسبه</button>
+      <button class="g" id="gps">مکان من</button>
+      <button class="g" id="today">امروز</button>
+      <button class="g" id="lontz">منطقهٔ زمانی تقریبی از طول</button>
+    </div>
+    <div class="now" id="now"></div>
+  </div>
+  <div class="card">
+    <h3 class="sun">☀️ خورشید</h3>
+    <table id="sunT"></table>
+    <h3 class="moon" style="margin-top:14px">🌙 ماه</h3>
+    <table id="moonT"></table>
+    <div class="note">آزیموت از شمال و در جهت عقربه‌های ساعت (۰°=شمال، ۹۰°=شرق، ۱۸۰°=جنوب، ۲۷۰°=غرب). ارتفاع زاویه‌ای بالای افق است. «ظهر» = لحظهٔ اوج (بیشینهٔ ارتفاع). طلوع/غروب خورشید با احتساب شکست جوی و شعاع قرص (−۰٫۸۳۳°).</div>
+  </div>
+  <div class="card">
+    <h3>نمودار ارتفاع در طول روز</h3>
+    <canvas id="cv" width="800" height="400"></canvas>
+    <div class="note"><span class="sun">■ خورشید</span> &nbsp; <span class="moon">■ ماه</span> &nbsp; خط چین = افق</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const rad=Math.PI/180, deg=180/Math.PI, dayMs=864e5, J1970=2440588, J2000=2451545, E=rad*23.4397;
+const toDays=ms=>ms/dayMs-0.5+J1970-J2000;
+const ra=(l,b)=>Math.atan2(Math.sin(l)*Math.cos(E)-Math.tan(b)*Math.sin(E),Math.cos(l));
+const dc=(l,b)=>Math.asin(Math.sin(b)*Math.cos(E)+Math.cos(b)*Math.sin(E)*Math.sin(l));
+const sidereal=(d,lw)=>rad*(280.16+360.9856235*d)-lw;
+function refr(h){if(h<0)h=0;return 0.0002967/Math.tan(h+0.00312536/(h+0.08901179));}
+function sunC(d){const M=rad*(357.5291+0.98560028*d);
+  const C=rad*(1.9148*Math.sin(M)+0.02*Math.sin(2*M)+0.0003*Math.sin(3*M));
+  const L=M+C+rad*102.9372+Math.PI;return{dec:dc(L,0),ra:ra(L,0)};}
+function moonC(d){const L=rad*(218.316+13.176396*d),M=rad*(134.963+13.064993*d),F=rad*(93.272+13.22935*d);
+  const l=L+rad*6.289*Math.sin(M),b=rad*5.128*Math.sin(F);return{ra:ra(l,b),dec:dc(l,b)};}
+function pos(c,ms,lat,lng){const d=toDays(ms),lw=rad*-lng,phi=rad*lat,H=sidereal(d,lw)-c.ra;
+  const az=Math.atan2(Math.sin(H),Math.cos(H)*Math.sin(phi)-Math.tan(c.dec)*Math.cos(phi));
+  let alt=Math.asin(Math.sin(phi)*Math.sin(c.dec)+Math.cos(phi)*Math.cos(c.dec)*Math.cos(H));
+  return{az:(az*deg+180+360)%360,alt:alt*deg,altRad:alt};}
+const sunPos=(ms,la,lo)=>pos(sunC(toDays(ms)),ms,la,lo);
+const moonPos=(ms,la,lo)=>{const p=pos(moonC(toDays(ms)),ms,la,lo);p.alt+=refr(p.altRad)*deg;return p;};
+
+const BODIES={sun:{fn:sunPos,h0:-0.833},moon:{fn:moonPos,h0:0.133}};
+function events(b,t0,lat,lon){
+  const step=5*60000,n=288,A=[];
+  for(let i=0;i<=n;i++)A.push(b.fn(t0+i*step,lat,lon).alt);
+  const rises=[],sets=[],transits=[];
+  for(let i=0;i<n;i++){
+    const f0=A[i]-b.h0,f1=A[i+1]-b.h0;
+    if((f0<0)!==(f1<0)){
+      let lo=t0+i*step,hi=lo+step;
+      for(let k=0;k<30;k++){const m=(lo+hi)/2,fm=b.fn(m,lat,lon).alt-b.h0;
+        if((fm<0)===(f0<0))lo=m;else hi=m;}
+      (f0<0?rises:sets).push((lo+hi)/2);
+    }
+  }
+  for(let i=1;i<n;i++){
+    if(A[i]>A[i-1]&&A[i]>=A[i+1]){
+      let lo=t0+(i-1)*step,hi=t0+(i+1)*step;
+      for(let k=0;k<40;k++){const m1=lo+(hi-lo)/3,m2=hi-(hi-lo)/3;
+        if(b.fn(m1,lat,lon).alt<b.fn(m2,lat,lon).alt)lo=m1;else hi=m2;}
+      transits.push((lo+hi)/2);
+    }
+  }
+  return{rises,sets,transits,A};
+}
+
+const fa=s=>String(s).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]).replace('.','٫');
+const $=id=>document.getElementById(id);
+let TZ=3.5;
+function fmtT(ms){const d=new Date(ms+TZ*36e5);
+  return fa(String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'));}
+const fmtA=x=>fa(x.toFixed(1))+'°';
+
+function dirName(az){return['شمال','شمال‌شرق','شرق','جنوب‌شرق','جنوب','جنوب‌غرب','غرب','شمال‌غرب'][Math.round(az/45)%8];}
+
+function fill(tableId,name,b,t0,lat,lon){
+  const ev=events(b,t0,lat,lon);
+  let h='<tr><th>رویداد</th><th>ساعت</th><th>آزیموت</th><th>ارتفاع</th></tr>';
+  const row=(lbl,t)=>{const p=b.fn(t,lat,lon);
+    const alt=lbl.startsWith('ظهر')||lbl.startsWith('اوج')?fmtA(p.alt):fmtA(Math.max(p.alt,b.h0)>=b.h0?p.alt:p.alt);
+    return `<tr><td>${lbl}</td><td>${fmtT(t)}</td><td>${fmtA(p.az)} (${dirName(p.az)})</td><td>${alt}</td></tr>`;};
+  ev.rises.forEach(t=>h+=row('طلوع '+name,t));
+  ev.transits.forEach(t=>h+=row((name==='خورشید'?'ظهر خورشیدی (اوج)':'اوج ماه'),t));
+  ev.sets.forEach(t=>h+=row('غروب '+name,t));
+  if(!ev.rises.length&&!ev.sets.length){
+    const up=ev.A[0]>b.h0;
+    h+=`<tr><td colspan="4">${up?'در این روز '+name+' غروب نمی‌کند (روز قطبی / بالای افق)':'در این روز '+name+' طلوع نمی‌کند'}</td></tr>`;
+  } else if(!ev.rises.length||!ev.sets.length||!ev.transits.length){
+    h+=`<tr><td colspan="4" style="color:#94a3b8">برخی رویدادها در این بازهٔ ۲۴ ساعته رخ نمی‌دهند.</td></tr>`;
+  }
+  $(tableId).innerHTML=h;
+  return ev;
+}
+
+function draw(t0,lat,lon){
+  const cv=$('cv'),c=cv.getContext('2d'),W=cv.width,H=cv.height,pad=36;
+  c.clearRect(0,0,W,H);
+  const step=10*60000,n=144,S=[],M=[];
+  for(let i=0;i<=n;i++){S.push(sunPos(t0+i*step,lat,lon).alt);M.push(moonPos(t0+i*step,lat,lon).alt);}
+  const mn=-90,mx=90,X=i=>pad+(W-pad-10)*i/n,Y=v=>10+(H-pad-10)*(mx-v)/(mx-mn);
+  c.strokeStyle='#334155';c.fillStyle='#94a3b8';c.font='13px sans-serif';c.textAlign='center';c.lineWidth=1;
+  for(let h=0;h<=24;h+=3){const x=X(h*6);c.beginPath();c.moveTo(x,10);c.lineTo(x,H-pad);c.stroke();
+    c.fillText(fa(String(((h*60+TZ*0)/60|0)%24).padStart(2,'0')),x,H-pad+16);}
+  c.textAlign='right';
+  [-90,-45,0,45,90].forEach(v=>{c.beginPath();c.moveTo(pad,Y(v));c.lineTo(W-10,Y(v));c.stroke();c.fillText(fa(v)+'°',pad-4,Y(v)+4);});
+  c.setLineDash([6,4]);c.strokeStyle='#e2e8f0';c.beginPath();c.moveTo(pad,Y(0));c.lineTo(W-10,Y(0));c.stroke();c.setLineDash([]);
+  const line=(arr,col)=>{c.strokeStyle=col;c.lineWidth=2.5;c.beginPath();arr.forEach((v,i)=>i?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));c.stroke();};
+  line(M,'#cbd5e1');line(S,'#fbbf24');
+}
+
+let map,marker;
+function calc(){
+  const lat=parseFloat($('lat').value),lon=parseFloat($('lon').value);
+  TZ=parseFloat($('tz').value)||0;
+  if(isNaN(lat)||isNaN(lon)||Math.abs(lat)>90||Math.abs(lon)>180){alert('مختصات نامعتبر است');return;}
+  const [y,m,d]=$('date').value.split('-').map(Number);
+  const t0=Date.UTC(y,m-1,d)-TZ*36e5;
+  fill('sunT','خورشید',BODIES.sun,t0,lat,lon);
+  fill('moonT','ماه',BODIES.moon,t0,lat,lon);
+  draw(t0,lat,lon);
+  const nowMs=Date.now(),s=sunPos(nowMs,lat,lon),mo=moonPos(nowMs,lat,lon);
+  $('now').innerHTML=`<b>اکنون:</b><br><span class="sun">☀️ خورشید:</span> ارتفاع ${fmtA(s.alt)}، آزیموت ${fmtA(s.az)}<br><span class="moon">🌙 ماه:</span> ارتفاع ${fmtA(mo.alt)}، آزیموت ${fmtA(mo.az)}`;
+  if(map){marker.setLatLng([lat,lon]);}
+}
+function setToday(){const n=new Date();$('date').value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');}
+
+setToday();
+$('tz').value=(-new Date().getTimezoneOffset()/60);
+$('go').onclick=calc;
+$('today').onclick=()=>{setToday();calc();};
+$('lontz').onclick=()=>{$('tz').value=Math.round(parseFloat($('lon').value)/15);calc();};
+$('gps').onclick=()=>navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>{
+  $('lat').value=p.coords.latitude.toFixed(4);$('lon').value=p.coords.longitude.toFixed(4);
+  if(map)map.setView([p.coords.latitude,p.coords.longitude],8);calc();},()=>alert('دسترسی به مکان ممکن نشد'));
+['lat','lon','date','tz'].forEach(i=>$(i).addEventListener('change',()=>{
+  if(map&&(i==='lat'||i==='lon'))map.panTo([+$('lat').value,+$('lon').value]);calc();}));
+
+if(window.L){
+  map=L.map('map').setView([35.6892,51.389],5);
+  const esriU='https://server.arcgisonline.com/ArcGIS/rest/services/';
+  const bases={
+    'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}),
+    'CARTO روشن':L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}),
+    'CARTO تیره':L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}),
+    'Esri خیابان':L.tileLayer(esriU+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
+    'Esri ماهواره':L.tileLayer(esriU+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
+    'Esri توپوگرافی':L.tileLayer(esriU+'World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
+    'OpenTopoMap':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:17,attribution:'© OpenTopoMap'}),
+    'بدون نقشه (فقط شبکه)':L.layerGroup()
+  };
+  bases['OpenStreetMap'].addTo(map);
+  L.control.layers(bases,null,{collapsed:false,position:'topright'}).addTo(map);
+  // شبکهٔ مختصات که بدون اینترنت هم دیده می‌شود
+  for(let la=-80;la<=80;la+=20)L.polyline([[la,-180],[la,180]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
+  for(let lo=-180;lo<=180;lo+=20)L.polyline([[-90,lo],[90,lo]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
+  L.polyline([[0,-180],[0,180]],{color:'#f59e0b',weight:1.5,opacity:.7,interactive:false}).addTo(map);
+  marker=L.circleMarker([35.6892,51.389],{radius:9,color:'#fff',weight:2,fillColor:'#ef4444',fillOpacity:1}).addTo(map);
+  map.on('click',e=>{$('lat').value=e.latlng.lat.toFixed(4);$('lon').value=((e.latlng.lng+540)%360-180).toFixed(4);calc();});
+}else{$('map').innerHTML='<div style="padding:20px">نقشه بارگذاری نشد (اینترنت لازم است). مختصات را دستی وارد کنید.</div>';}
+calc();
+</script>
+</body>
+</html>
