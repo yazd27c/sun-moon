@@ -13,11 +13,12 @@ header{padding:14px 18px;background:#1e293b;font-size:18px;font-weight:bold}
 @media(max-width:850px){.wrap{grid-template-columns:1fr}}
 #map{height:420px;border-radius:12px;border:1px solid #334155;background:#1e293b}
 .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;overflow-x:auto}
-.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end}
 label{font-size:13px;display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px}
-input,button{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#e2e8f0}
+input,button,select{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#e2e8f0}
 button{cursor:pointer;background:#2563eb;border-color:#2563eb}
 button.g{background:#334155;border-color:#475569}
+button.o{background:#b45309;border-color:#b45309}
 table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
 th,td{padding:7px 6px;border-bottom:1px solid #334155;text-align:center}
 td:not(:first-child){direction:ltr;unicode-bidi:isolate}
@@ -30,6 +31,7 @@ h3{margin:4px 0 6px;font-size:15px}
 canvas{width:100%;height:240px;background:#0f172a;border-radius:8px}
 .note{font-size:12px;color:#94a3b8;line-height:1.8;margin-top:8px}
 .now{font-size:14px;line-height:2}
+.sep{border-top:1px solid #334155;margin:12px 0 10px}
 </style>
 </head>
 <body>
@@ -55,6 +57,20 @@ canvas{width:100%;height:240px;background:#0f172a;border-radius:8px}
       <button class="g" id="dprev">روز قبل</button>
       <button class="g" id="dnext">روز بعد</button>
       <button class="g" id="lontz">منطقهٔ زمانی تقریبی از طول</button>
+    </div>
+    <div class="sep"></div>
+    <div class="row">
+      <label>دورهٔ بررسی (از تاریخ بالا)
+        <select id="per">
+          <option value="7">7 روز</option>
+          <option value="30">30 روز</option>
+          <option value="90">90 روز</option>
+          <option value="365" selected>365 روز (یک سال)</option>
+          <option value="custom">دلخواه (تا تاریخ روبه‌رو)</option>
+        </select>
+      </label>
+      <label>تا تاریخ (برای حالت دلخواه)<input id="to" type="date"></label>
+      <button class="o" id="ext">🏆 ترین‌ها (تب جدید)</button>
     </div>
     <div class="now" id="now"></div>
   </div>
@@ -187,12 +203,178 @@ function shiftDate(days,months,years){
   calc();
 }
 
+/* ================= گزارش «ترین‌ها» در تب جدید ================= */
+const P2=n=>String(n).padStart(2,'0');
+const hms=ms=>{const s=Math.round(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),c=s%60;return P2(h)+':'+P2(m)+':'+P2(c);};
+const hm=ms=>{const s=Math.round(ms/60000);return P2(Math.floor(s/60))+':'+P2(s%60);};
+const dg=v=>v.toFixed(2)+'°';
+
+function periodChart(vals,fmt,color,dates){
+  const W=720,H=190,pl=62,pr=12,pt=12,pb=24;
+  const ok=vals.filter(v=>v!=null);
+  if(!ok.length)return '<div class="note">داده‌ای برای این نمودار نیست.</div>';
+  let mn=Math.min(...ok),mx=Math.max(...ok);
+  if(mx-mn<1e-9){mx+=1;mn-=1;}
+  const n=vals.length,X=i=>pl+(W-pl-pr)*(n>1?i/(n-1):.5),Y=v=>pt+(H-pt-pb)*(mx-v)/(mx-mn);
+  let d='',pen=false,dots='';
+  vals.forEach((v,i)=>{
+    if(v==null){pen=false;return;}
+    d+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';pen=true;
+    if(n<=60)dots+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="2.5" fill="${color}"/>`;
+  });
+  let g='';
+  for(let k=0;k<=4;k++){const v=mn+(mx-mn)*k/4,y=Y(v);
+    g+=`<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" stroke="#334155"/><text x="${pl-6}" y="${y+4}" text-anchor="end" fill="#94a3b8" font-size="11">${fmt(v)}</text>`;}
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;direction:ltr;background:#0f172a;border-radius:8px">${g}<path d="${d}" fill="none" stroke="${color}" stroke-width="2"/>${dots}<text x="${pl}" y="${H-6}" fill="#94a3b8" font-size="11">${dates[0]}</text><text x="${W-pr}" y="${H-6}" text-anchor="end" fill="#94a3b8" font-size="11">${dates[n-1]}</text></svg>`;
+}
+
+function extremeRows(days,defs){
+  let h='';
+  defs.forEach(f=>{
+    let lo=null,hi=null;
+    days.forEach(d=>{
+      const v=f.get(d);
+      if(v==null||isNaN(v))return;
+      if(lo===null||v<lo.v)lo={v,d};
+      if(hi===null||v>hi.v)hi={v,d};
+    });
+    if(!lo)return;
+    h+=`<tr><td>${f.lo}</td><td>${f.fmt(lo.v)}</td><td>${lo.d.date}</td></tr>`;
+    h+=`<tr><td>${f.hi}</td><td>${f.fmt(hi.v)}</td><td>${hi.d.date}</td></tr>`;
+  });
+  return h;
+}
+
+function openExtremes(){
+  const lat=parseFloat($('lat').value),lon=parseFloat($('lon').value);
+  TZ=parseFloat($('tz').value)||0;
+  if(isNaN(lat)||isNaN(lon)||Math.abs(lat)>90||Math.abs(lon)>180){alert('مختصات نامعتبر است');return;}
+  const [y,m,d]=$('date').value.split('-').map(Number);
+  if(!y){alert('تاریخ شروع را وارد کنید');return;}
+  const startUTC=Date.UTC(y,m-1,d);
+  const per=$('per').value;
+  let N;
+  if(per==='custom'){
+    const [y2,m2,d2]=$('to').value.split('-').map(Number);
+    if(!y2){alert('برای حالت دلخواه، «تا تاریخ» را وارد کنید');return;}
+    N=Math.round((Date.UTC(y2,m2-1,d2)-startUTC)/dayMs)+1;
+    if(N<1){alert('«تا تاریخ» باید بعد از تاریخ شروع باشد');return;}
+  }else N=+per;
+  if(N>1830){alert('حداکثر دوره 1830 روز (5 سال) است');return;}
+
+  const days=[];
+  for(let i=0;i<N;i++){
+    const t0=startUTC+i*dayMs-TZ*36e5;
+    const date=new Date(startUTC+i*dayMs).toISOString().slice(0,10);
+    // خورشید
+    const se=events(BODIES.sun,t0,lat,lon);
+    const sr=se.rises.length?se.rises[0]-t0:null;
+    const ss=se.sets.length?se.sets[0]-t0:null;
+    const sn=se.transits.length?se.transits[0]-t0:null;
+    const sAlt=se.transits.length?sunPos(se.transits[0],lat,lon).alt:null;
+    const srAz=se.rises.length?sunPos(se.rises[0],lat,lon).az:null;
+    const ssAz=se.sets.length?sunPos(se.sets[0],lat,lon).az:null;
+    let len;
+    if(sr!=null&&ss!=null)len=ss>sr?ss-sr:ss+(dayMs-sr);
+    else if(sr!=null)len=dayMs-sr;
+    else if(ss!=null)len=ss;
+    else len=se.A[0]>BODIES.sun.h0?dayMs:0;
+    // ماه
+    const me=events(BODIES.moon,t0,lat,lon);
+    const mr=me.rises.length?me.rises[0]-t0:null;
+    const mset=me.sets.length?me.sets[0]-t0:null;
+    let mAlt=null;
+    me.transits.forEach(t=>{const a=moonPos(t,lat,lon).alt;if(mAlt===null||a>mAlt)mAlt=a;});
+    days.push({date,sr,ss,sn,sAlt,srAz,ssAz,len,mr,mset,mAlt});
+  }
+
+  const sunDefs=[
+    {lo:'زودترین طلوع خورشید',hi:'دیرترین طلوع خورشید',get:d=>d.sr,fmt:hms},
+    {lo:'زودترین غروب خورشید',hi:'دیرترین غروب خورشید',get:d=>d.ss,fmt:hms},
+    {lo:'زودترین ظهر خورشیدی (اوج)',hi:'دیرترین ظهر خورشیدی (اوج)',get:d=>d.sn,fmt:hms},
+    {lo:'کوتاه‌ترین روز (مدت روشنایی)',hi:'طولانی‌ترین روز (مدت روشنایی)',get:d=>d.len,fmt:hms},
+    {lo:'کمترین ارتفاع خورشید در ظهر',hi:'بیشترین ارتفاع خورشید در ظهر',get:d=>d.sAlt,fmt:dg},
+    {lo:'کمترین آزیموت طلوع',hi:'بیشترین آزیموت طلوع',get:d=>d.srAz,fmt:dg},
+    {lo:'کمترین آزیموت غروب',hi:'بیشترین آزیموت غروب',get:d=>d.ssAz,fmt:dg}
+  ];
+  const moonDefs=[
+    {lo:'زودترین طلوع ماه',hi:'دیرترین طلوع ماه',get:d=>d.mr,fmt:hms},
+    {lo:'زودترین غروب ماه',hi:'دیرترین غروب ماه',get:d=>d.mset,fmt:hms},
+    {lo:'کمترین ارتفاع اوج ماه',hi:'بیشترین ارتفاع اوج ماه',get:d=>d.mAlt,fmt:dg}
+  ];
+
+  const lens=days.map(x=>x.len).filter(v=>v!=null);
+  const avgLen=lens.length?lens.reduce((a,b)=>a+b,0)/lens.length:null;
+  const dates=days.map(x=>x.date);
+  const tm=v=>v==null?'—':hms(v);
+  const ta=v=>v==null?'—':dg(v);
+
+  const dailySun=days.map(x=>`<tr><td>${x.date}</td><td>${tm(x.sr)}</td><td>${tm(x.sn)}</td><td>${tm(x.ss)}</td><td>${tm(x.len)}</td><td>${ta(x.sAlt)}</td><td>${ta(x.srAz)}</td><td>${ta(x.ssAz)}</td></tr>`).join('');
+  const dailyMoon=days.map(x=>`<tr><td>${x.date}</td><td>${tm(x.mr)}</td><td>${tm(x.mset)}</td><td>${ta(x.mAlt)}</td></tr>`).join('');
+
+  const html=`<!DOCTYPE html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ترین‌ها: ${dates[0]} تا ${dates[N-1]}</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Tahoma,Vazirmatn,sans-serif;background:#0f172a;color:#e2e8f0;padding:16px;max-width:980px;margin:auto}
+h1{font-size:20px;margin:6px 0}
+h2{font-size:16px;margin:22px 0 8px;border-bottom:1px solid #334155;padding-bottom:6px}
+.meta{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;line-height:2;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:6px;border-bottom:1px solid #334155;text-align:center}
+th{color:#94a3b8;font-weight:normal;position:sticky;top:0;background:#0f172a}
+table.s td:not(:first-child),table.d td{direction:ltr;unicode-bidi:isolate}
+table.s td:first-child{text-align:right}
+.box{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px;overflow-x:auto}
+.scroll{max-height:420px;overflow:auto}
+button{font:inherit;padding:7px 12px;border-radius:8px;border:0;background:#2563eb;color:#fff;cursor:pointer}
+.sun{color:#fbbf24}.moon{color:#cbd5e1}
+.note{font-size:12px;color:#94a3b8;line-height:1.8;margin-top:6px}
+@media print{body{background:#fff;color:#000}.meta,.box{background:#fff;border-color:#999}th{background:#fff;color:#000}button{display:none}.scroll{max-height:none}}
+</style></head><body>
+<button onclick="window.print()">🖨 چاپ / ذخیره PDF</button>
+<h1>🏆 ترین‌های خورشید و ماه</h1>
+<div class="meta">
+مکان: عرض <bdi dir="ltr">${lat.toFixed(4)}</bdi> ، طول <bdi dir="ltr">${lon.toFixed(4)}</bdi><br>
+دوره: <bdi dir="ltr">${dates[0]}</bdi> تا <bdi dir="ltr">${dates[N-1]}</bdi> (<bdi dir="ltr">${N}</bdi> روز) &nbsp;|&nbsp; اختلاف ساعت از UTC: <bdi dir="ltr">${TZ}</bdi><br>
+${avgLen!=null?'میانگین مدت روشنایی روز: <bdi dir="ltr">'+hms(avgLen)+'</bdi>':''}
+</div>
+
+<h2 class="sun">☀️ ترین‌های خورشید</h2>
+<div class="box"><table class="s"><tr><th>عنوان</th><th>مقدار</th><th>تاریخ</th></tr>${extremeRows(days,sunDefs)}</table></div>
+
+<h2 class="moon">🌙 ترین‌های ماه</h2>
+<div class="box"><table class="s"><tr><th>عنوان</th><th>مقدار</th><th>تاریخ</th></tr>${extremeRows(days,moonDefs)}</table>
+<div class="note">در روزهایی که ماه طلوع یا غروب نمی‌کند، آن روز در محاسبهٔ همان مورد نادیده گرفته می‌شود.</div></div>
+
+<h2>📈 نمودارها</h2>
+<div class="box"><b>مدت روشنایی روز</b>${periodChart(days.map(x=>x.len),hm,'#fbbf24',dates)}</div><br>
+<div class="box"><b>ساعت طلوع خورشید</b>${periodChart(days.map(x=>x.sr),hm,'#f97316',dates)}</div><br>
+<div class="box"><b>ساعت غروب خورشید</b>${periodChart(days.map(x=>x.ss),hm,'#a78bfa',dates)}</div><br>
+<div class="box"><b>ارتفاع خورشید در ظهر</b>${periodChart(days.map(x=>x.sAlt),v=>v.toFixed(1)+'°','#34d399',dates)}</div>
+
+<h2 class="sun">☀️ جدول روزانهٔ خورشید</h2>
+<div class="box scroll"><table class="d"><tr><th>تاریخ</th><th>طلوع</th><th>ظهر</th><th>غروب</th><th>طول روز</th><th>ارتفاع ظهر</th><th>آزیموت طلوع</th><th>آزیموت غروب</th></tr>${dailySun}</table></div>
+
+<h2 class="moon">🌙 جدول روزانهٔ ماه</h2>
+<div class="box scroll"><table class="d"><tr><th>تاریخ</th><th>طلوع</th><th>غروب</th><th>ارتفاع اوج</th></tr>${dailyMoon}</table></div>
+<div class="note">دقت الگوریتم حدود یک دقیقه است؛ ثانیه‌ها فقط برای نمایش دقیق‌ترند.</div>
+</body></html>`;
+
+  const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
+  const w=window.open(url,'_blank');
+  if(!w)alert('مرورگر تب جدید را مسدود کرد؛ اجازهٔ پنجرهٔ بازشو (Pop-up) را برای این سایت فعال کنید.');
+}
+
 setToday();
 $('tz').value=(-new Date().getTimezoneOffset()/60);
 $('go').onclick=calc;
 $('today').onclick=()=>{setToday();calc();};
 $('dprev').onclick=()=>shiftDate(-1,0,0);
 $('dnext').onclick=()=>shiftDate(1,0,0);
+$('ext').onclick=openExtremes;
 $('lontz').onclick=()=>{$('tz').value=Math.round(parseFloat($('lon').value)/15);calc();};
 $('gps').onclick=()=>navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>{
   $('lat').value=p.coords.latitude.toFixed(4);$('lon').value=p.coords.longitude.toFixed(4);
@@ -213,23 +395,4 @@ if(window.L){
   const esriU='https://server.arcgisonline.com/ArcGIS/rest/services/';
   const bases={
     'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}),
-    'CARTO روشن':L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}),
-    'CARTO تیره':L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}),
-    'Esri خیابان':L.tileLayer(esriU+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
-    'Esri ماهواره':L.tileLayer(esriU+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
-    'Esri توپوگرافی':L.tileLayer(esriU+'World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
-    'OpenTopoMap':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:17,attribution:'© OpenTopoMap'}),
-    'بدون نقشه (فقط شبکه)':L.layerGroup()
-  };
-  bases['OpenStreetMap'].addTo(map);
-  L.control.layers(bases,null,{collapsed:false,position:'topright'}).addTo(map);
-  for(let la=-80;la<=80;la+=20)L.polyline([[la,-180],[la,180]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
-  for(let lo=-180;lo<=180;lo+=20)L.polyline([[-90,lo],[90,lo]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
-  L.polyline([[0,-180],[0,180]],{color:'#f59e0b',weight:1.5,opacity:.7,interactive:false}).addTo(map);
-  marker=L.circleMarker([35.6892,51.389],{radius:9,color:'#fff',weight:2,fillColor:'#ef4444',fillOpacity:1}).addTo(map);
-  map.on('click',e=>{$('lat').value=e.latlng.lat.toFixed(4);$('lon').value=((e.latlng.lng+540)%360-180).toFixed(4);calc();});
-}else{$('map').innerHTML='<div style="padding:20px">نقشه بارگذاری نشد (اینترنت لازم است). مختصات را دستی وارد کنید.</div>';}
-calc();
-</script>
-</body>
-</html>
+    'CARTO
