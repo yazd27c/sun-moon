@@ -260,7 +260,7 @@ function openExtremes(){
     N=Math.round((Date.UTC(y2,m2-1,d2)-startUTC)/dayMs)+1;
     if(N<1){alert('«تا تاریخ» باید بعد از تاریخ شروع باشد');return;}
   }else N=+per;
-  if(N>1830){alert('حداکثر دوره 1830 روز (5 سال) است');return;}
+  if(N>5000){alert('حداکثر دوره 5000 روز (5 سال) است');return;}
 
   const days=[];
   for(let i=0;i<N;i++){
