@@ -395,4 +395,23 @@ if(window.L){
   const esriU='https://server.arcgisonline.com/ArcGIS/rest/services/';
   const bases={
     'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}),
-    'CARTO
+    'CARTO روشن':L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}),
+    'CARTO تیره':L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap © CARTO'}),
+    'Esri خیابان':L.tileLayer(esriU+'World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
+    'Esri ماهواره':L.tileLayer(esriU+'World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
+    'Esri توپوگرافی':L.tileLayer(esriU+'World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),
+    'OpenTopoMap':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:17,attribution:'© OpenTopoMap'}),
+    'بدون نقشه (فقط شبکه)':L.layerGroup()
+  };
+  bases['OpenStreetMap'].addTo(map);
+  L.control.layers(bases,null,{collapsed:false,position:'topright'}).addTo(map);
+  for(let la=-80;la<=80;la+=20)L.polyline([[la,-180],[la,180]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
+  for(let lo=-180;lo<=180;lo+=20)L.polyline([[-90,lo],[90,lo]],{color:'#64748b',weight:1,opacity:.5,interactive:false}).addTo(map);
+  L.polyline([[0,-180],[0,180]],{color:'#f59e0b',weight:1.5,opacity:.7,interactive:false}).addTo(map);
+  marker=L.circleMarker([35.6892,51.389],{radius:9,color:'#fff',weight:2,fillColor:'#ef4444',fillOpacity:1}).addTo(map);
+  map.on('click',e=>{$('lat').value=e.latlng.lat.toFixed(4);$('lon').value=((e.latlng.lng+540)%360-180).toFixed(4);calc();});
+}else{$('map').innerHTML='<div style="padding:20px">نقشه بارگذاری نشد (اینترنت لازم است). مختصات را دستی وارد کنید.</div>';}
+calc();
+</script>
+</body>
+</html>
