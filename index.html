@@ -184,7 +184,26 @@ $('gps').onclick=()=>navigator.geolocation&&navigator.geolocation.getCurrentPosi
   if(map)map.setView([p.coords.latitude,p.coords.longitude],8);calc();},()=>alert('دسترسی به مکان ممکن نشد'));
 ['lat','lon','date','tz'].forEach(i=>$(i).addEventListener('change',()=>{
   if(map&&(i==='lat'||i==='lon'))map.panTo([+$('lat').value,+$('lon').value]);calc();}));
-
+function shiftDate(days,months,years){
+  const [y,m,d]=$('date').value.split('-').map(Number);
+  if(!y)return;
+  const base=new Date(Date.UTC(y+years,m-1+months,1));
+  const by=base.getUTCFullYear(),bm=base.getUTCMonth();
+  const dim=new Date(Date.UTC(by,bm+1,0)).getUTCDate();
+  const dt=new Date(Date.UTC(by,bm,Math.min(d,dim)+days));
+  $('date').value=dt.toISOString().slice(0,10);
+  calc();
+}
+$('date').addEventListener('keydown',e=>{
+  if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
+  e.preventDefault();
+  const s=e.key==='ArrowUp'?1:-1;
+  if(e.shiftKey)shiftDate(0,s,0);        // Shift + فلش = ماه
+  else if(e.ctrlKey)shiftDate(0,0,s);    // Ctrl + فلش = سال
+  else shiftDate(s,0,0);                 // فلش = روز
+});
+$('dprev').onclick=()=>shiftDate(-1,0,0);
+$('dnext').onclick=()=>shiftDate(1,0,0);
 if(window.L){
   map=L.map('map').setView([35.6892,51.389],5);
   const esriU='https://server.arcgisonline.com/ArcGIS/rest/services/';
